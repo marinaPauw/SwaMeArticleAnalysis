@@ -1,0 +1,454 @@
+---
+title: "SwaMeRT"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+
+library(dendextend)#sort_dist_mat
+
+```
+
+```{r}
+SwaMeRT = read_delim("AebersoldMetrics.tsv", delim = "\t")
+
+```
+```{r}
+
+SwaMeRT$Sample = NULL
+  i = 1
+for(i in 1:nrow(SwaMeRT))
+{
+  
+spl =  strsplit(SwaMeRT$Filename[i],"_")
+temp = sapply(spl, "[", 3)
+
+SwaMeRT$Sample[i] =paste(sep = "","sample",temp)
+  
+}
+levels = NULL
+
+for(i in 1:9)
+{
+  levels = c(levels,paste(sep = "","sample00",i))
+}
+for(i in 10:38)
+{
+  levels = c(levels,paste(sep = "","sample0",i))
+}
+SwaMeRT$Sample = factor(SwaMeRT$Sample, levels = levels)
+
+
+```
+
+```{r}
+#SwaMeRT$` RTsegment ` = as.numeric(SwaMeRT$` RTsegment `)
+#PCA for the different segments individually
+
+RTsegments<-as.character(SwaMeRT$` RTsegment `)
+
+for(i in 1: length(unique(SwaMeRT$` RTsegment `)))
+{
+  segment = SwaMeRT[which(SwaMeRT$` RTsegment ` ==i),]
+
+  #PCA
+  
+  
+
+  onlyNumerics<-segment[,c(3:14)]
+  pca<-prcomp(onlyNumerics, scale=TRUE)
+  plot(pca)
+  
+  segment$PC1 = pca$x[,1]
+  segment$PC2 = pca$x[,2]
+  
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC1"]= pca$x[,1]
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC2"] = pca$x[,2]
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC3"] = pca$x[,3]
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC4"] = pca$x[,4]
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC5"] = pca$x[,5]
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC6"] = pca$x[,6]
+  SwaMeRT[which(SwaMeRT$` RTsegment `==i),"PC7"] = pca$x[,7]
+  
+  PCAloadings <- data.frame(Variables = rownames(pca$rotation), pca$rotation)
+  
+  gplot<-ggplot(segment,aes(x = segment$PC1, y = segment$PC2 ))+
+ #   geom_segment(data = PCAloadings,aes(x = 0, y = 0, xend = (PC1*5),
+  ##   yend = (PC2*5)), arrow = arrow(length = unit(1/2, "picas")),
+   #  color = "black") +
+  geom_point()+
+  ##  annotate("text", x = (PCAloadings$PC1*5), y = (PCAloadings$PC2*5),
+  #   label = PCAloadings$Variables)+
+  ggtitle(paste("PCA- RTsegment",i))+
+  xlab("PC1")+
+  ylab("PC2")+
+    geom_text(aes(label=Sample),hjust=0.5, vjust=0)+
+  theme(axis.text.x =element_text(angle = 90))
+  print(gplot)
+  }
+
+```
+
+
+
+
+
+```{r}
+
+#Finding outliers:Screeplot elbow method indicated the following number of PC's per rtsegment:
+
+#2 PC's: 3,7,8
+#3 PC's: 1,4,6,9,10
+#4 PC's: 2,5
+
+outliers = 0
+
+ii = 3
+##########################################################################################
+# Distance matrix - PCA
+##########################################################################################
+for(ii in c(3,7,8))
+{
+  distTable=dist(SwaMeRT[which(SwaMeRT$` RTsegment `==ii),16:17], method="euclidean", diag= FALSE,upper=TRUE)
+  #Create distance Matrix from the table and sort
+  distMatrix=as.matrix(distTable,labels=TRUE)
+  dim(distMatrix)
+  #Finding the median distance for each experiment
+  distDf<-as.data.frame(distMatrix)
+  distDf$Sample = SwaMeRT[which(SwaMeRT$` RTsegment `==ii),"Sample"]
+ # rownames(distDf) <- c("sample1","sample2","sample3","sample4","sample5","sample6","sample7","sample8","sample9","sample10","sample11","sample12")
+  MedDist<-NULL
+  for(i in 1:34)
+  {
+    function(row) {all(row > 0.00)}
+    distVecI<-distDf[,i]
+    distVecI[distVecI == 0] <- NA
+    distVecI<-na.omit(distVecI)
+     Med<-median(distVecI)
+     MedDist<- c(MedDist,Med)
+  }
+  MedDistDf<- as.data.frame(MedDist)
+  MedDistDf$Sample <- distDf$Sample
+  iqr = IQR(MedDist)
+  q3 = quantile(MedDist)
+  
+  for(iii in 1:nrow(MedDistDf))
+  {
+    if(MedDistDf[iii,1]>q3[4]+3*iqr)
+    {
+      outliers <- c(outliers,paste(sep = "",MedDistDf[iii,"Sample"],"segment",ii ))
+      }
+    
+    }
+    
+    
+  boxplot(MedDistDf[,1], range=3,main=paste("Median Euclidean distance from PCA - RTsegment", ii))
+}
+```
+
+```{r}
+for(ii in c(2,5))
+{
+  distTable=dist(SwaMeRT[which(SwaMeRT$` RTsegment `==ii),16:17], method="euclidean", diag= FALSE,upper=TRUE)
+  #Create distance Matrix from the table and sort
+  distMatrix=as.matrix(distTable,labels=TRUE)
+  dim(distMatrix)
+  #Finding the median distance for each experiment
+  distDf<-as.data.frame(distMatrix)
+  distDf$Sample = SwaMeRT[which(SwaMeRT$` RTsegment `==ii),"Sample"]
+ # rownames(distDf) <- c("sample1","sample2","sample3","sample4","sample5","sample6","sample7","sample8","sample9","sample10","sample11","sample12")
+  MedDist<-NULL
+  for(i in 1:34)
+  {
+    function(row) {all(row > 0.00)}
+    distVecI<-distDf[,i]
+    distVecI[distVecI == 0] <- NA
+    distVecI<-na.omit(distVecI)
+     Med<-median(distVecI)
+     MedDist<- c(MedDist,Med)
+  }
+  MedDistDf<- as.data.frame(MedDist)
+  MedDistDf$Sample <- distDf$Sample
+  iqr = IQR(MedDist)
+  q3 = quantile(MedDist)
+  
+  for(iii in 1:nrow(MedDistDf))
+  {
+    if(MedDistDf[iii,1]>q3[4]+3*iqr)
+    {
+      outliers <- c(outliers,paste(sep = "",MedDistDf[iii,"Sample"],"segment",ii ))
+      }
+    
+    }
+    
+    
+  boxplot(MedDistDf[,1], range=3,main=paste("Median Euclidean distance from PCA - RTsegment", ii))
+}
+for(ii in c(1,4,6,9,10))
+{
+  distTable=dist(SwaMeRT[which(SwaMeRT$` RTsegment `==ii),16:17], method="euclidean", diag= FALSE,upper=TRUE)
+  #Create distance Matrix from the table and sort
+  distMatrix=as.matrix(distTable,labels=TRUE)
+  dim(distMatrix)
+  #Finding the median distance for each experiment
+  distDf<-as.data.frame(distMatrix)
+  distDf$Sample = SwaMeRT[which(SwaMeRT$` RTsegment `==ii),"Sample"]
+ # rownames(distDf) <- c("sample1","sample2","sample3","sample4","sample5","sample6","sample7","sample8","sample9","sample10","sample11","sample12")
+  MedDist<-NULL
+  for(i in 1:34)
+  {
+    function(row) {all(row > 0.00)}
+    distVecI<-distDf[,i]
+    distVecI[distVecI == 0] <- NA
+    distVecI<-na.omit(distVecI)
+     Med<-median(distVecI)
+     MedDist<- c(MedDist,Med)
+  }
+  MedDistDf<- as.data.frame(MedDist)
+  MedDistDf$Sample <- distDf$Sample
+  iqr = IQR(MedDist)
+  q3 = quantile(MedDist)
+  
+  for(iii in 1:nrow(MedDistDf))
+  {
+    if(MedDistDf[iii,1]>q3[4]+3*iqr)
+    {
+      outliers <- c(outliers,paste(sep = "",MedDistDf[iii,"Sample"],"segment",ii ))
+      }
+    
+    }
+    
+    
+  boxplot(MedDistDf[,1], range=3,main=paste("Median Euclidean distance from PCA - RTsegment", ii))
+}
+
+
+print(outliers[2:length(outliers)])
+
+```
+```{r}
+
+#Therefore there were no outliers
+
+```
+
+
+
+```{r}
+
+colourscheme = c("black","blue3","blueviolet","brown","burlywood3","burlywood4","cadetblue","chartreuse4","chartreuse3","chocolate","coral1","cornflowerblue","darkgoldenrod","darkgreen","darkolivegreen4","darkorchid4","darkred","deeppink3","deepskyblue","firebrick1","gold2","red","orangered","seagreen","thistle3","orange1","gray38","gray56","darkmagenta","navy","pink4","saddlebrown","palegreen3","orangered3","yellow4","yellowgreen","springgreen3","tan2")
+
+
+```
+
+
+```{r}
+
+##########Peak widths
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` MS2Peakwidths `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Peak widths per RT segment")+
+  xlab("RTsegments")+
+  ylab("Peakwidth in seconds")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))
+
+
+```
+
+
+```{r}
+
+##########Tailing factor
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` TailingFactor `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Peak tailing factor per RT segment")+
+  xlab("RTsegments")+
+  ylab("Seconds")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))
+
+
+```
+
+
+
+```{r}
+
+##########Peak Capacity
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` MS2PeakCapacity `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Peak capacity per RT segment")+
+  xlab("RTsegments")+
+  ylab("Peak capacity in seconds")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))
+
+
+```
+
+```{r}
+
+##########Peak Precision - MS2
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` MS2Peakprecision `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("MS2 Peak Precision per RT segment")+
+  xlab("RTsegments")+
+  ylab("Peak precision in seconds")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))
+
+```
+
+```{r}
+
+##########Peak Precision - MS1
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` MS1PeakPrecision `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("MS1 Peak Precision per RT segment")+
+  xlab("RTsegments")+
+  ylab("Peak precision in seconds")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))
+
+```
+
+```{r}
+##########DeltaTICaverage
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = log(SwaMeRT$` DeltaTICAvgrage `), colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Change in TIC from one scan to the next")+
+  xlab("RTsegments")+
+  ylab("Log intensity")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))+
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+
+```{r}
+##########AveMS2Density
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` AvgMS2Density `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Average MS2 Density")+
+  xlab("RTsegments")+
+  ylab("Number of ions")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))+
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+
+```{r}
+##########AveMS1Density
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` AvgMS1Density `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Average MS1 Density")+
+  xlab("RTsegments")+
+  ylab("Number of ions")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))+
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+
+```{r}
+##########MS2TICTotal
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` MS2TICTotal `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Total MS2 TIC Total")+
+  xlab("RTsegments")+
+  ylab("Intensity")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))+
+  scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+
+```{r}
+##########MS1TICTotal
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` RTsegment `, y = SwaMeRT$` MS1TICTotal `, colour= SwaMeRT$Sample))+
+  geom_line()+
+  ggtitle("Total MS1 TIC Total")+
+  xlab("RTsegments")+
+  ylab("Intensity")+
+  scale_color_manual(values=colourscheme, name = "Sample")+
+  theme(axis.text.x =element_text(angle = 90))
+
+
+```
+
+```{r}
+##########Density vs TIC
+
+ggplot(SwaMeRT,aes(x = SwaMeRT$` AvgMS2Density `, y = SwaMeRT$` MS2TICTotal `, colour= factor(SwaMeRT$` RTsegment `, levels = c(1:10))))+
+  geom_point()+
+  ggtitle("Average MS2 Density vs MS2 TIC")+
+  xlab("Density")+
+  ylab("TIC")+
+  scale_color_manual(values=colourscheme, name = "RTSegment")+
+  theme(axis.text.x =element_text(angle = 90))
+
+
+```
+
+```{r}
+##########AveMS2Density
+
+ggplot(SwaMeRT,aes(x =SwaMeRT$Sample , y = SwaMeRT$` AvgMS2Density `, fill=factor(SwaMeRT$` RTsegment `, levels = c(1:10))))+
+   geom_bar(position="fill", stat = "identity")+
+  ggtitle("Average MS2 Density")+
+  xlab("RTsegments")+
+  ylab("Number of ions")+
+  scale_fill_manual(values=colourscheme, name = "RTSegment")+
+  theme(axis.text.x =element_text(angle = 90))
+  #scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+```{r}
+##########MS2TIC
+
+ggplot(SwaMeRT,aes(x =SwaMeRT$Sample , y = SwaMeRT$` MS2TICTotal `, fill=factor(SwaMeRT$` RTsegment `, levels = c(1:10))))+
+   geom_bar(position="fill", stat = "identity")+
+  ggtitle("MS2TICTOTAL")+
+  xlab("RTsegments")+
+  ylab("TIC")+
+  scale_fill_manual(values=colourscheme, name = "RTSegment")+
+  theme(axis.text.x =element_text(angle = 90))
+  #scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+
+```{r}
+##########AveMS2Density
+
+ggplot(SwaMeRT,aes(x =SwaMeRT$Sample , y = SwaMeRT$` AvgMS2Density `, fill=factor(SwaMeRT$` RTsegment `, levels = c(1:10))))+
+   geom_bar(position="fill", stat = "identity")+
+  ggtitle("Average MS2 Density")+
+  xlab("RTsegments")+
+  ylab("Number of ions")+
+  scale_fill_manual(values=colourscheme, name = "RTSegment")+
+  theme(axis.text.x =element_text(angle = 90))
+  #scale_x_continuous(breaks = c(1,2,3,4,5,6,7,8,9,10))
+
+
+```
+
+
